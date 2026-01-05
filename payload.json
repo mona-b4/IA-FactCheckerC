@@ -1,9 +1,0 @@
-{
-  "model": "mistral-small-latest",
-  "messages": [
-    {
-      "role": "user",
-      "content": "Bonjour, voici la question : La France occupe 50% de la terre \n.\n\nVoici les extraits trouves sur le web :\nAucune source trouvee automatiquement.\n\nAnalyse-les et reponds STRICTEMENT dans ce format :\nBonjour,\nVoici la reponse a votre question :\n\nReponse : VRAI / FAUX / PAS SUR\nExplication : ...\nSources :\n- ...\n- ...\n\nJ'espere que cela vous aura aide, a bientot !"
-    }
-  ]
-}
