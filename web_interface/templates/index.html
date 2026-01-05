@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Vérification IA</title>
+</head>
+<body>
+    <h1>Vérification de faits par IA</h1>
+    <textarea id="question" rows="5" cols="60" placeholder="Pose ta question ici..."></textarea><br><br>
+    <button onclick="verifier()">Vérifier</button>
+
+    <h2>Réponse :</h2>
+    <p id="answer"></p>
+    <p id="confidence"></p>
+    <ul id="sources"></ul>
+
+    <script>
+        function verifier() {
+            const question = document.getElementById("question").value;
+            fetch("/api/ask", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ question })
+            })
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById("answer").innerText = "Réponse : " + data.answer;
+                document.getElementById("confidence").innerText = "Confiance : " + data.confidence;
+                const sourcesList = document.getElementById("sources");
+                sourcesList.innerHTML = "";
+                data.sources.forEach(src => {
+                    const li = document.createElement("li");
+                    li.innerText = src;
+                    sourcesList.appendChild(li);
+                });
+            });
+        }
+    </script>
+</body>
+</html>
+
