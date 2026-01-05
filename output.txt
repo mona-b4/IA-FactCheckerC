@@ -1,6 +1,0 @@
-Votre question (affirmation a verifier) : 
-Recherche web sur DuckDuckGo...
-Analyse IA en cours...
-
-Analyse IA terminee. Resultat dans ai_result.json
-Erreur : champ content introuvable
