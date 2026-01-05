@@ -5,6 +5,12 @@
 #include <ctype.h>
 #include <locale.h>
 
+char *extraire_champ(const char *texte, const char *etiquette);
+char **extraire_sources(const char *texte, int *nb);
+int score_confiance(const char *reponse);
+void sauvegarder_resultat_json(const char *reponse, int confiance, const char *explication, const char **sources, int nb_sources);
+
+
 //
 // ────────────────────────────────────────────────────────────────
 //  1) NETTOYAGE DE LA QUESTION
@@ -361,44 +367,149 @@ void afficher_reponse_finale() {
     free(json);
 }
 
-//
+char *extraire_champ(const char *texte, const char *etiquette) {
+    const char *pos = strstr(texte, etiquette);
+    if (!pos) return NULL;
+
+    // Aller après l’étiquette
+    pos += strlen(etiquette);
+
+    // Sauter les espaces, deux-points, étoiles, etc.
+    while (*pos == ' ' || *pos == ':' || *pos == '*' || *pos == '\t') pos++;
+
+    // Chercher la fin de ligne ou double saut de ligne
+    const char *fin = strstr(pos, "\n\n");
+    if (!fin) fin = pos + strlen(pos);
+
+    int len = fin - pos;
+    char *resultat = malloc(len + 1);
+    strncpy(resultat, pos, len);
+    resultat[len] = '\0';
+    return resultat;
+}
+
+
+char **extraire_sources(const char *texte, int *nb) {
+    *nb = 0;
+    char **liste = malloc(10 * sizeof(char *));
+    const char *p = texte;
+    while ((p = strstr(p, "- "))) {
+        p += 2;
+        const char *fin = strchr(p, '\n');
+        if (!fin) fin = p + strlen(p);
+        int len = fin - p;
+        char *src = malloc(len + 1);
+        strncpy(src, p, len);
+        src[len] = '\0';
+        liste[*nb] = src;
+        (*nb)++;
+        if (*nb >= 10) break;
+        p = fin;
+    }
+    return liste;
+}
+
+int score_confiance(const char *reponse) {
+    if (strstr(reponse, "VRAI")) return 95;
+    if (strstr(reponse, "FAUX")) return 5;
+    return 50;
+}
+
+void sauvegarder_resultat_json(const char *reponse, int confiance, const char *explication, const char **sources, int nb_sources) {
+    FILE *f = fopen("ai_result.json", "w");
+    if (!f) return;
+
+    fprintf(f, "{\n");
+    fprintf(f, "  \"answer\": \"%s\",\n", escape_json(reponse));
+    fprintf(f, "  \"confidence\": %d,\n", confiance);
+    fprintf(f, "  \"explanation\": \"%s\",\n", escape_json(explication));
+    fprintf(f, "  \"sources\": [\n");
+    for (int i = 0; i < nb_sources; i++) {
+        fprintf(f, "    \"%s\"%s\n", escape_json(sources[i]), (i < nb_sources - 1) ? "," : "");
+    }
+    fprintf(f, "  ]\n");
+    fprintf(f, "}\n");
+
+    fclose(f);
+}
+
+
 // ────────────────────────────────────────────────────────────────
 //  8) MAIN : CHAÎNAGE COMPLET
 // ────────────────────────────────────────────────────────────────
 //
+
 int main() {
     setlocale(LC_ALL, "");
-    char question[256];
-    char original_question[256];
 
-    printf("Votre question (affirmation a verifier) : ");
-    if (!fgets(question, sizeof(question), stdin)) {
-        printf("Erreur de lecture\n");
-        return 1;
-    }
+    // Lire la question
+    char *question_file = load_file("question.txt");
+    if (!question_file) return 1;
 
-    snprintf(original_question, sizeof(original_question), "%s", question);
+    char question[512];
+    snprintf(question, sizeof(question), "%s", question_file);
     trim(question);
 
-    printf("\nRecherche web sur DuckDuckGo...\n");
+    // Recherche web
     search_web(question);
+    char *html = load_file("result.html");
+    if (!html) return 1;
 
-    char *html_data = load_file("result.html");
-    if (!html_data) {
-        printf("Erreur : result.html introuvable\n");
-        return 1;
+    char *snippets = extract_snippets(html);
+
+    // Appel API
+    call_mistral_api(question, snippets);
+
+    // Lire la réponse brute
+    char *json = load_file("ai_result.json");
+    if (!json) return 1;
+
+    char *start = strstr(json, "\"content\":\"");
+    if (!start) return 1;
+    start += strlen("\"content\":\"");
+
+    char *end = strstr(start, "\"}");
+    if (!end) end = start + strlen(start);
+
+    int len = end - start;
+    char *content = malloc(len + 1);
+    strncpy(content, start, len);
+    content[len] = '\0';
+
+    // Affichage du contenu brut pour debug
+printf("\n--- CONTENU BRUT DE L'IA ---\n%s\n----------------------------\n", content);
+
+
+    // Nettoyage des \n
+    for (int i = 0; content[i]; i++) {
+        if (content[i] == '\\' && content[i+1] == 'n') {
+            content[i] = '\n';
+            memmove(&content[i+1], &content[i+2], strlen(&content[i+2]) + 1);
+        }
     }
 
-    char *snippets = extract_snippets(html_data);
+    // Extraction des champs
+    char *reponse = extraire_champ(content, "Réponse");
+    char *explication = extraire_champ(content, "Explication");
+    int confiance = score_confiance(reponse);
+    int nb_sources = 0;
+    char **sources = extraire_sources(content, &nb_sources);
 
-    printf("Analyse IA en cours...\n");
-    call_mistral_api(original_question, snippets);
+    // Sauvegarde finale
+   sauvegarder_resultat_json(reponse, confiance, explication, (const char **)sources, nb_sources);
 
-    // 🔥 C’EST ICI QUE TU DOIS AFFICHER LA RÉPONSE FINALE
-    afficher_reponse_finale();
 
-    free(html_data);
+    // Libération mémoire
+    free(question_file);
+    free(html);
     free(snippets);
+    free(json);
+    free(content);
+    free(reponse);
+    free(explication);
+    for (int i = 0; i < nb_sources; i++) free(sources[i]);
+    free(sources);
 
     return 0;
+
 }
