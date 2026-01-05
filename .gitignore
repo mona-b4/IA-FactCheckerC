@@ -1,3 +1,9 @@
+*.exe
+*.zip
+*.json
+*.txt
 .env
 ai_result.json
 result.json
+__pycache__/
+
